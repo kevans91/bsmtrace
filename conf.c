@@ -39,9 +39,7 @@ static const struct _settype_tab {
 	{ "egid",		SET_TYPE_EGID },
 	{ "euid",		SET_TYPE_EUID },
 	{ "path",		SET_TYPE_PATH },
-#ifdef PCRE
-	{ "pcre",		SET_TYPE_PCRE },
-#endif
+	{ "sock",		SET_TYPE_SOCK },
 	{ "rgid",		SET_TYPE_RGID },
 	{ "ruid",		SET_TYPE_RUID },
 	{ "logchannel",		SET_TYPE_LOGCHANNEL },
@@ -125,16 +123,14 @@ void
 conf_array_add(const char *str, struct array *a, int type)
 {
 	int e, value;
-	char *ptr, *r, *estring;
+	char *r, *estring;
 	struct au_event_ent *aue;
 	struct au_class_ent *auc;
 	struct passwd *pwd;
 	struct group *gr;
-#ifdef PCRE
 	const char *error;
-	int erroffset;
+	int erroffset, flags;
 	pcre *re;
-#endif
 
 	value = -1;
 	e = 0;
@@ -180,18 +176,18 @@ conf_array_add(const char *str, struct array *a, int type)
 		}
 		value = gr->gr_gid;
 		break;
-#ifdef PCRE
-	case SET_TYPE_PCRE:
-		re = pcre_compile(str, 0, &error, &erroffset, NULL);
-		if (error != 0)
-			bsmtrace_fatal("%s: pcre_compile failed", __func__);
-		break;
-#endif
 	case SET_TYPE_PATH:
-	case SET_TYPE_LOGCHANNEL:
-		ptr = strdup(str);
-		if (ptr == NULL)
-			bsmtrace_fatal("%s: strdup failed", __func__);
+	case SET_TYPE_SOCK:
+		flags = PCRE_DOTALL | PCRE_DOLLAR_ENDONLY;
+		debug_printf("pcre_compile('%s')\n", str);
+		re = pcre_compile(str, flags, &error, &erroffset, NULL);
+		if (re == NULL) {
+			bsmtrace_fatal("ERROR: Could not compile '%s': %s\n", str, error);
+		}
+		/*
+		 * NB: there are far more error conditions that we should be handling
+		 * here. At some point come back and fix this.
+		 */
 		break;
 	}
 	if (e != 0) {
@@ -200,14 +196,9 @@ conf_array_add(const char *str, struct array *a, int type)
 		if (*r != '\0')
 			conf_detail(0, "%s: invalid %s name\n", str, estring);
 	}
-	if (type == SET_TYPE_PATH || type == SET_TYPE_LOGCHANNEL) {
-		a->a_data.string[a->a_cnt++] = ptr;
-		a->a_type = STRING_ARRAY;
-#ifdef PCRE
-	} else if (type == SET_TYPE_PCRE) {
+	if (type == SET_TYPE_PATH || type == SET_TYPE_SOCK) {
 		a->a_data.pcre[a->a_cnt++] = re;
 		a->a_type = PCRE_ARRAY;
-#endif
 	} else {
 		if (value == -1) {
 			bsmtrace_fatal("%s: un-initialized 'value'\n");

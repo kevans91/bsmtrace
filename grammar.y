@@ -342,14 +342,9 @@ object_spec:
 
 		if ((ptr = conf_get_bsm_set($3)) == NULL)
 			conf_detail(0, "%s: invalid set", $3);
-#ifdef PCRE
 		if (ptr->bss_type != SET_TYPE_PATH &&
-		    ptr->bss_type != SET_TYPE_PCRE)
+		    ptr->bss_type != SET_TYPE_SOCK)
 			conf_detail(0, "objects must be of type path or pcre");
-#else
-		if (ptr->bss_type != SET_TYPE_PATH)
-			conf_detail(0, "objects must be of type path");
-#endif
 		src = &ptr->bss_data;
 		dst = &bm_state->bm_objects;
 		*dst = *src;
@@ -361,14 +356,9 @@ object_spec:
 		struct array *src, *dst;
 
 		src = &$3->bss_data;
-#ifdef PCRE
 		if ($3->bss_type != SET_TYPE_PATH &&
-		    $3->bss_type != SET_TYPE_PCRE)
-			conf_detail(0, "objects must be of type path or pcre");
-#else
-		if ($3->bss_type != SET_TYPE_PATH)
-			conf_detail(0, "objects must be of type path");
-#endif
+		    $3->bss_type != SET_TYPE_SOCK)
+			conf_detail(0, "objects must be of type path or sock");
 		dst = &bm_state->bm_objects;
 		*dst = *src;
 		bzero(&array_state, sizeof(struct array));

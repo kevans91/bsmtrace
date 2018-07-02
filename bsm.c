@@ -96,13 +96,32 @@ bsm_match_event(struct bsm_state *bm, struct bsm_record_data *bd)
 }
 
 static int
+bsm_scan_object_array(struct array *ap, char *objname)
+{
+	int match, rc, i;
+	size_t slen;
+
+	assert(objname != NULL);
+	assert(ap->a_type == PCRE_ARRAY);
+	slen = strlen(objname);
+	for (match = 0, i = 0; i < ap->a_cnt; i++) {
+		rc = pcre_exec(ap->a_data.pcre[i], NULL, objname,
+		    slen, 0, 0, NULL, 0);
+		if (rc >= 0) {
+			return (1);
+		} else if (rc < -1) {
+			bsmtrace_fatal("pcre exec failed for pattern"
+			    " %s on path %s", ap->a_data.pcre[i], objname);
+		}
+	}
+	return (0);
+}
+
+static int
 bsm_match_object(struct bsm_state *bm, struct bsm_record_data *bd)
 {
-	int i, slen, match;
 	struct array *ap;
-#ifdef PCRE
-	int rc;
-#endif
+	int match;
 
 	/*
 	 * XXXCSJP 
@@ -143,41 +162,21 @@ bsm_match_object(struct bsm_state *bm, struct bsm_record_data *bd)
 	 * We are interested in particular objects, but the audit record has
 	 * not supplied any.  We will treat this as a fail to match.
 	 */
-	if (bd->br_path == NULL)
+	if (bd->br_path == NULL && bd->br_sock_unix == NULL)
 		return (0);
 	/*
-	 * Otherwise, the record contains a pathname which may be represented as
-	 * a static string, or as a pcre.
+	 * Otherwise, the record contains a pathname which is represented as
+	 * as a pcre.
 	 */
-	if (ap->a_type == STRING_ARRAY) {
-		for (match = 0, i = 0; i < ap->a_cnt; i++) {
-			slen = strlen(ap->a_data.string[i]);
-			if (strncmp(ap->a_data.string[i], bd->br_path, slen)
-			    == 0) {
-				match = 1;
-				break;
-			}
-		}
-#ifdef PCRE
-	} else if (ap->a_type == PCRE_ARRAY) {
-		slen = strlen(bd->br_path);
-		for (match = 0, i = 0; i < ap->a_cnt; i++) {
-			rc = pcre_exec(ap->a_data.pcre[i], NULL, bd->br_path,
-			    slen, 0, 0, NULL, 0);
-			if (rc == 0) {
-				match = 1;
-				break;
-			} else if (rc < -1) {
-				bsmtrace_fatal("pcre exec failed for pattern"
-				    " %s on path %s", ap->a_data.pcre[i],
-				    bd->br_path);
-			}
-		}
-#endif
-	} else
-		/* No other type makes sense. */
-		assert(0);
-	/* Handle negation. */
+	if (bd->br_path) {
+		match = bsm_scan_object_array(ap, bd->br_path);
+	}
+	if (bd->br_sock_unix) {
+		match = bsm_scan_object_array(ap, bd->br_sock_unix);
+	}
+	/*
+	 * Handle negation (invert the sense of match)
+	 */
 	if (ap->a_negated != 0)
 		match = !match;
 	return (match);
@@ -186,6 +185,9 @@ bsm_match_object(struct bsm_state *bm, struct bsm_record_data *bd)
 static void
 bsm_log_sequence(struct bsm_sequence *bs, struct bsm_record_data *bd)
 {
+	if (opts.Nflag == 1) {
+		return;
+	}
 	/*
 	 * If no logging configuration was specified and we are running
 	 * in the foreground, than simply log to stderr.
@@ -330,7 +332,6 @@ bsm_copy_states(struct bsm_sequence *bs_old, struct bsm_sequence *bs_new)
 	 * Make sure that we initialize the new tailq head to NULL
 	 * otherwise we would be recursively adding states.
 	 */
-	debug_printf("%s: copying states from sequence %p\n", __func__, bs_old);
 	TAILQ_INIT(&bs_new->bs_mhead);
 	TAILQ_FOREACH(bm, &bs_old->bs_mhead, bm_glue) {
 		bm2 = calloc(1, sizeof(*bm2));
@@ -495,7 +496,7 @@ bsm_sequence_scan(struct bsm_record_data *bd)
 		if (match == 0)
 			continue;
 		bm = bs->bs_cur_state;
-		bsm_run_trigger(bd, bm);
+		bsm_run_trigger(bd, bm, bs);
 		if (opts.bflag)
 			(void) write(1, bd->br_raw, bd->br_raw_len);
 		bm->bm_raw = bsm_copy_record_data(bd);
@@ -517,7 +518,7 @@ bsm_sequence_scan(struct bsm_record_data *bd)
 		match = bsm_check_parent_sequence(bs, bd);
 		if (match == 0)
 			continue;
-		bsm_run_trigger(bd, TAILQ_FIRST(&bs->bs_mhead));
+		bsm_run_trigger(bd, TAILQ_FIRST(&bs->bs_mhead), bs);
 		if (opts.bflag)
 			(void) write(1, bd->br_raw, bd->br_raw_len);
 		/*
@@ -547,6 +548,8 @@ bsm_loop(char *atrail)
 	u_char *bsm_rec;
 	tokenstr_t tok;
 	FILE *fp;
+	int cc, sample;
+	time_t first, s;
 
 	if (strcmp(opts.aflag, "-") == 0)
 		fp = stdin;
@@ -561,6 +564,9 @@ bsm_loop(char *atrail)
 	 * Process the BSM record, one token at a time.
 	 */
 	recsread = 0;
+	cc = 0;
+	sample = 0;
+	first = time(NULL);
 	while ((reclen = au_read_rec(fp, &bsm_rec)) != -1) {
 		/*
 		 * If we are reading data from the audit pipe, we need check
@@ -570,6 +576,23 @@ bsm_loop(char *atrail)
 		 */
 		if (audit_pipe_fd > 0 && (recsread % 50) == 0)
 			pipe_analyze_loss(audit_pipe_fd);
+		if (opts.Nflag == 1) {
+			s = time(NULL);
+			if (s - first >= 1) {
+				printf(" %d ", sample);
+				fflush(stdout);
+				sample = 0;
+				first = s;
+			}
+			if ((cc % 100) == 0) {
+				putchar('.');
+				fflush(stdout);
+			}
+			cc++;
+			sample++;
+			// free(bsm_rec);
+			// continue;
+		}
 		bzero(&bd, sizeof(bd));
 		bd.br_raw = bsm_rec;
 		bd.br_raw_len = reclen;
@@ -644,7 +667,10 @@ bsm_loop(char *atrail)
 				bd.br_inode = tok.tt.attr32.nid;
 				break;
 			case AUT_PATH:
-				bd.br_path = tok.tt.path.path;
+				bd.br_path = strdup(tok.tt.path.path);
+				break;
+			case AUT_SOCKUNIX:
+				bd.br_sock_unix = strdup(tok.tt.sockunix.path);
 				break;
 			}
 			bytesread += tok.len;
@@ -652,6 +678,8 @@ bsm_loop(char *atrail)
 		if (bd.br_path != NULL && bd.br_dev != 0 && bd.br_inode != 0)
 			fcache_add_entry(bd.br_dev, bd.br_inode, bd.br_path);
 		bsm_sequence_scan(&bd);
+		free(bd.br_path);
+		free(bd.br_sock_unix);
 		free(bsm_rec);
 		recsread++;
 	}

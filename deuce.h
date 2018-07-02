@@ -47,9 +47,7 @@ enum {
 	SET_TYPE_EGID,
 	SET_TYPE_EUID,
 	SET_TYPE_PATH,
-#ifdef PCRE
-	SET_TYPE_PCRE,
-#endif
+	SET_TYPE_SOCK,
 	SET_TYPE_RGID,
 	SET_TYPE_RUID,
 	SET_TYPE_LOGCHANNEL
@@ -158,6 +156,7 @@ struct bsm_record_data {
 	int		 br_sid;	/* Session ID */
 	dev_t		 br_dev;	/* For fs objects, the device id. */
 	ino_t		 br_inode;	/* For fs objects, the inode. */
+	char		*br_sock_unix;	/* path name associated with UNIX domain socket */
 };
 
 #endif	/* DEUCE_H_ */

@@ -153,7 +153,7 @@ main(int argc, char *argv[])
 	(void) signal(SIGCHLD, SIG_IGN); /* Ignore dying children */
 	(void) signal(SIGINT, bsmtrace_handle_sigint);
 	set_default_settings(&opts);
-	while ((ch = getopt(argc, argv, "Fa:Bbdf:hil:np:v")) != -1) {
+	while ((ch = getopt(argc, argv, "Fa:Bbdf:hil:nNp:v")) != -1) {
 		switch (ch) {
 		case 'B':
 			opts.Bflag = 1;
@@ -175,6 +175,9 @@ main(int argc, char *argv[])
 			break;
 		case 'l':
 			opts.lflag = optarg;
+			break;
+		case 'N':
+			opts.Nflag = 1;
 			break;
 		case 'n':
 			opts.nflag = 1;

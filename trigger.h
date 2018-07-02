@@ -36,9 +36,11 @@ enum {
 	EXP_NONE,
 	EXP_USER,
 	EXP_OBJECT,
-	EXP_EUSER
+	EXP_EUSER,
+	EXP_ALERT
 };
 
-void	 bsm_run_trigger(struct bsm_record_data *, struct bsm_state *);
-char	*bsm_expand_trigger(struct bsm_record_data *, struct bsm_state *);
+void	 bsm_run_trigger(struct bsm_record_data *, struct bsm_state *, struct bsm_sequence *);
+char	*bsm_expand_trigger(struct bsm_record_data *, struct bsm_state *, struct bsm_sequence *);
+
 #endif /* TRIGGER_H_ */

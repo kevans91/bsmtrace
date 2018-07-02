@@ -36,11 +36,13 @@ static const struct _exptab {
 	{ "subject",	EXP_USER },
 	{ "object",	EXP_OBJECT },
 	{ "esubject",	EXP_EUSER },
+	{ "alert",	EXP_ALERT },
 	{ NULL,		0 }
 };
 
 char *
-bsm_expand_trigger(struct bsm_record_data *bd, struct bsm_state *bm)
+bsm_expand_trigger(struct bsm_record_data *bd, struct bsm_state *bm,
+    struct bsm_sequence *bs)
 {
 	char *p0, *p1, *ret, token[2048], *tptr;
 	const struct _exptab *expptr;
@@ -112,7 +114,7 @@ bsm_expand_trigger(struct bsm_record_data *bd, struct bsm_state *bm)
 }
 
 void
-bsm_run_trigger(struct bsm_record_data *bd, struct bsm_state *bm)
+bsm_run_trigger(struct bsm_record_data *bd, struct bsm_state *bm, struct bsm_sequence *bs)
 {
 	char *cmd, *ptr;
 	char **args;
@@ -121,7 +123,7 @@ bsm_run_trigger(struct bsm_record_data *bd, struct bsm_state *bm)
 	assert((bd != NULL) && (bm != NULL));
 	if (bm->bm_trig[0] == '\0')
 		return;
-	cmd = bsm_expand_trigger(bd, bm);
+	cmd = bsm_expand_trigger(bd, bm, bs);
 	if (cmd != NULL) {
 		/*
 		 * NB: should the failure to execute a trigger be fatal?
